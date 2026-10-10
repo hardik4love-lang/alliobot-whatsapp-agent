@@ -8,9 +8,10 @@ const { Pool } = require('pg');
  * preventing QR code re-scan upon container restarts on Render free tier.
  */
 async function usePostgresAuthState(connectionString, tableName = 'baileys_auth_store') {
-    const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+    const cleanConnectionString = connectionString.replace(/([?&])channel_binding=[^&]*(&|$)/, '$1').replace(/[?&]$/, '');
+    const isLocalhost = cleanConnectionString.includes('localhost') || cleanConnectionString.includes('127.0.0.1');
     const pool = new Pool({
-        connectionString,
+        connectionString: cleanConnectionString,
         ssl: isLocalhost ? false : { rejectUnauthorized: false },
         connectionTimeoutMillis: 10000
     });
