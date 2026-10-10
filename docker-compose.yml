@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: alliobot_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: alliobot_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: alliobot_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  evolution_api:
+    image: atendux/evolution-api:v2.1.2
+    container_name: alliobot_evolution_api
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://localhost:8080
+      - DOCKER_ENV=true
+      - AUTHENTICATION_API_KEY=alliobot_secret_foss_api_key_2026
+      - DATABASE_ENABLED=true
+      - DATABASE_CONNECTION_URI=postgresql://postgres:postgres@postgres:5432/alliobot_db
+      - REDIS_ENABLED=true
+      - REDIS_URI=redis://redis:6379
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: alliobot_ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alliobot_app
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      evolution_api:
+        condition: service_started
+      ollama:
+        condition: service_started
+
+volumes:
+  pgdata:
+  redisdata:
+  ollamadata:
