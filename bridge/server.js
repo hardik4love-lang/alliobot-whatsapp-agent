@@ -14,7 +14,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 10000;
 const FASTAPI_WEBHOOK_URL = process.env.FASTAPI_WEBHOOK_URL || 'http://localhost:8000/webhook/whatsapp';
 
 let sock = null;
@@ -212,7 +212,7 @@ app.get(['/group/fetchAllGroups/:instance', '/group/fetchAllGroups'], async (req
     }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`====================================================`);
     console.log(`🚀 AllioBot WhatsApp Gateway running on port ${PORT}`);
     console.log(`👉 Open http://localhost:${PORT}/manager in your browser!`);

@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
-# Install Node.js, npm and system dependencies
+# Install system dependencies (git is required for Baileys npm install), curl and Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     curl \
     build-essential \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -16,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Node.js dependencies for the WhatsApp Gateway
 COPY bridge/package.json bridge/.npmrc ./bridge/
-RUN cd bridge && npm install --allow-git=all
+RUN cd bridge && npm install --allow-git=all --omit=dev
 
 # Copy entire repository source code
 COPY . .
