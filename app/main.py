@@ -28,8 +28,10 @@ except Exception as e:
     logger.warning(f"Redis initialization warning: {e}")
     r_client = None
 
+from app.db_adapter import db
+
 def get_db_connection():
-    return psycopg2.connect(settings.DATABASE_URL, cursor_factory=RealDictCursor)
+    return db.get_connection()
 
 @app.get("/health")
 def health_check():

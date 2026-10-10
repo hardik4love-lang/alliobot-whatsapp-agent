@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: alliobot-whatsapp-agent
+    env: docker
+    plan: free
+    region: singapore
+    branch: main
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: USER_PHONE_NUMBER
+        sync: false
+      - key: OPERATIONS_GROUP_JID
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
