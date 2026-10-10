@@ -7,8 +7,10 @@ const {
     default: makeWASocket,
     useMultiFileAuthState,
     DisconnectReason,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    downloadMediaMessage
 } = require('@whiskeysockets/baileys');
+const { usePostgresAuthState } = require('./postgres-auth');
 
 const app = express();
 app.use(cors());
@@ -24,7 +26,21 @@ let connectionStatus = 'initializing';
 let connectedPhone = null;
 
 async function startWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_session');
+    let authState;
+    const dbUrl = process.env.DATABASE_URL;
+    if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
+        try {
+            console.log('Connecting to PostgreSQL for WhatsApp session persistence...');
+            authState = await usePostgresAuthState(dbUrl);
+            console.log('✅ PostgreSQL WhatsApp Auth Store active! Session will survive container restarts.');
+        } catch (dbErr) {
+            console.warn('PostgreSQL auth failed, falling back to local file auth:', dbErr.message);
+            authState = await useMultiFileAuthState('./auth_session');
+        }
+    } else {
+        authState = await useMultiFileAuthState('./auth_session');
+    }
+    const { state, saveCreds } = authState;
     const { version } = await fetchLatestBaileysVersion();
 
     sock = makeWASocket({
@@ -73,13 +89,29 @@ async function startWhatsApp() {
             if (!msg.message || msg.key.fromMe) continue;
 
             const remoteJid = msg.key.remoteJid;
-            const text = msg.message.conversation ||
+            let text = msg.message.conversation ||
                          msg.message.extendedTextMessage?.text ||
                          '';
+            let audioPayload = null;
 
-            if (!text) continue;
+            // Handle WhatsApp Audio / Push-To-Talk Voice Notes
+            const audioMsg = msg.message.audioMessage;
+            if (audioMsg) {
+                try {
+                    const audioBuffer = await downloadMediaMessage(msg, 'buffer', {});
+                    audioPayload = {
+                        base64: audioBuffer.toString('base64'),
+                        mimetype: audioMsg.mimetype || 'audio/ogg; codecs=opus'
+                    };
+                    console.log(`🎙️ Voice note received from ${remoteJid} (${audioBuffer.length} bytes)`);
+                } catch (audioErr) {
+                    console.error('Failed to download voice note audio:', audioErr.message);
+                }
+            }
 
-            console.log(`📩 Inbound message from ${remoteJid}: "${text}"`);
+            if (!text && !audioPayload) continue;
+
+            console.log(`📩 Inbound message from ${remoteJid}: "${text || '[Voice Note]'}"`);
 
             // Forward to FastAPI Webhook
             const payload = {
@@ -92,7 +124,8 @@ async function startWhatsApp() {
                     },
                     message: {
                         conversation: text
-                    }
+                    },
+                    audio: audioPayload
                 }
             };
 
@@ -207,6 +240,11 @@ app.get(['/group/fetchAllGroups/:instance', '/group/fetchAllGroups'], async (req
             subject: g.subject
         }));
         return res.json(result);
+    } catch (e) {
+        return res.json([]);
+    }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({

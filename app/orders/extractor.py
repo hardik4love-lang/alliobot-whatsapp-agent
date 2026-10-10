@@ -82,28 +82,28 @@ Transcript:
         except Exception:
             pass
 
-    if raw_json and raw_json.get("is_order", False):
+    try:
+        if raw_json and raw_json.get("is_order", False):
+            is_sample = raw_json.get("is_sample", False)
+            qty = float(raw_json.get("quantity_kg", 0.5 if is_sample else 5.0))
+            address = raw_json.get("delivery_address") or "Surat"
+            suburb = raw_json.get("surat_suburb") or detect_surat_suburb(address)
 
-                    is_sample = raw_json.get("is_sample", False)
-                    qty = float(raw_json.get("quantity_kg", 0.5 if is_sample else 5.0))
-                    address = raw_json.get("delivery_address") or "Surat"
-                    suburb = raw_json.get("surat_suburb") or detect_surat_suburb(address)
+            unit_price = settings.DEFAULT_PRICE_PER_KG
+            if qty >= settings.BULK_DISCOUNT_MIN_KG:
+                unit_price = settings.BULK_DISCOUNT_PRICE_PER_KG
 
-                    unit_price = settings.DEFAULT_PRICE_PER_KG
-                    if qty >= settings.BULK_DISCOUNT_MIN_KG:
-                        unit_price = settings.BULK_DISCOUNT_PRICE_PER_KG
-
-                    order = ParsedOrder(
-                        restaurant_name=raw_json.get("restaurant_name") or "Surat Commercial Kitchen",
-                        quantity_kg=qty,
-                        unit_price=unit_price,
-                        delivery_address=address,
-                        surat_suburb=suburb,
-                        delivery_slot=DeliverySlot.MORNING_PREP,
-                        payment_mode="COD_UPI",
-                        order_type=OrderType.SAMPLE_500G if is_sample else OrderType.COMMERCIAL_ORDER
-                    )
-                    return order
+            order = ParsedOrder(
+                restaurant_name=raw_json.get("restaurant_name") or "Surat Commercial Kitchen",
+                quantity_kg=qty,
+                unit_price=unit_price,
+                delivery_address=address,
+                surat_suburb=suburb,
+                delivery_slot=DeliverySlot.MORNING_PREP,
+                payment_mode="COD_UPI",
+                order_type=OrderType.SAMPLE_500G if is_sample else OrderType.COMMERCIAL_ORDER
+            )
+            return order
     except Exception as e:
         logger.error(f"Error in LLM order extraction: {e}")
 

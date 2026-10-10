@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+import base64
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from loguru import logger
 import psycopg2
@@ -12,6 +13,7 @@ from app.compliance.jitter import is_within_circadian_window, calculate_poisson_
 from app.compliance.entropy import generate_dynamic_outbound_pitch
 from app.compliance.presence import simulate_human_presence_and_send
 from app.agent.orchestrator import generate_sales_response
+from app.agent.transcriber import transcribe_voice_note
 from app.orders.extractor import extract_order_from_text
 from app.alerts.group_notifier import dispatch_operations_group_alert
 
@@ -78,6 +80,16 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
         or ""
     ).strip()
 
+    # Voice Note Ingestion via Groq Whisper (for kitchen chefs sending audio)
+    audio_obj = data.get("audio") or message_data.get("audio")
+    if not message_text and audio_obj and audio_obj.get("base64"):
+        try:
+            audio_bytes = base64.b64decode(audio_obj["base64"])
+            message_text = await transcribe_voice_note(audio_bytes)
+            logger.info(f"Transcribed incoming voice note from {customer_phone}: '{message_text}'")
+        except Exception as e:
+            logger.warning(f"Voice note decoding/transcription failed: {e}")
+
     message_id = key.get("id")
     if not message_text or not message_id:
         return {"status": "ignored_empty"}
@@ -107,6 +119,8 @@ async def process_incoming_conversation(customer_phone: str, incoming_text: str)
     4. Evaluates whether an order or sample was confirmed
     5. Dispatches formatted alert to Internal Operations WhatsApp Group
     """
+    conn = None
+    cur = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -122,7 +136,7 @@ async def process_incoming_conversation(customer_phone: str, incoming_text: str)
             ("Inbound Lead", customer_phone)
         )
         lead_row = cur.fetchone()
-        lead_id = lead_row["id"]
+        lead_id = lead_row["id"] if isinstance(lead_row, dict) else lead_row[0]
 
         # Get or create conversation
         cur.execute(
@@ -140,7 +154,7 @@ async def process_incoming_conversation(customer_phone: str, incoming_text: str)
                 (lead_id,)
             )
             conv_row = cur.fetchone()
-        conversation_id = conv_row["id"]
+        conversation_id = conv_row["id"] if isinstance(conv_row, dict) else conv_row[0]
 
         # Record incoming message
         cur.execute(
@@ -162,7 +176,8 @@ async def process_incoming_conversation(customer_phone: str, incoming_text: str)
         )
         history_rows = cur.fetchall()
         history = [
-            {"role": "assistant" if r["sender_type"] == "AGENT" else "user", "content": r["message_text"]}
+            {"role": "assistant" if (r["sender_type"] if isinstance(r, dict) else r[0]) == "AGENT" else "user",
+             "content": r["message_text"] if isinstance(r, dict) else r[1]}
             for r in history_rows
         ]
 
@@ -187,31 +202,55 @@ async def process_incoming_conversation(customer_phone: str, incoming_text: str)
         parsed_order = await extract_order_from_text(full_transcript)
 
         if parsed_order:
-            order_code = f"ORD-{uuid.uuid4().hex[:6].upper()}"
+            # Prevent duplicate orders within 12 hours for same lead
             cur.execute(
                 """
-                INSERT INTO orders (
-                    lead_id, order_code, quantity_kg, unit_price, total_amount,
-                    delivery_slot, delivery_address, surat_suburb, payment_mode
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id;
+                SELECT id, order_code FROM orders
+                WHERE lead_id = %s AND created_at > NOW() - INTERVAL '12 hours'
+                LIMIT 1;
                 """,
-                (
-                    lead_id, order_code, parsed_order.quantity_kg, parsed_order.unit_price,
-                    parsed_order.total_amount, parsed_order.delivery_slot.value,
-                    parsed_order.delivery_address, parsed_order.surat_suburb, parsed_order.payment_mode
-                )
+                (lead_id,)
             )
-            conn.commit()
-            logger.info(f"Order created {order_code} for {customer_phone}. Dispatching Operations WhatsApp Group Alert...")
+            existing_order = cur.fetchone()
 
-            # Alert Internal Operations WhatsApp Group
-            await dispatch_operations_group_alert(parsed_order, customer_phone, order_code)
+            if not existing_order:
+                order_code = f"ORD-{uuid.uuid4().hex[:6].upper()}"
+                cur.execute(
+                    """
+                    INSERT INTO orders (
+                        lead_id, order_code, quantity_kg, unit_price, total_amount,
+                        delivery_slot, delivery_address, surat_suburb, payment_mode
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (
+                        lead_id, order_code, parsed_order.quantity_kg, parsed_order.unit_price,
+                        parsed_order.total_amount, parsed_order.delivery_slot.value,
+                        parsed_order.delivery_address, parsed_order.surat_suburb, parsed_order.payment_mode
+                    )
+                )
+                conn.commit()
+                logger.info(f"Order created {order_code} for {customer_phone}. Dispatching Operations WhatsApp Group Alert...")
 
-        cur.close()
-        conn.close()
+                # Alert Internal Operations WhatsApp Group
+                await dispatch_operations_group_alert(parsed_order, customer_phone, order_code)
+            else:
+                existing_code = existing_order["order_code"] if isinstance(existing_order, dict) else existing_order[1]
+                logger.info(f"Order {existing_code} already active for lead {lead_id}. Skipping duplicate alert.")
+
     except Exception as e:
         logger.error(f"Error in conversation processing pipeline: {e}")
+    finally:
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 @app.post("/leads/scrape")
 async def trigger_lead_scrape(background_tasks: BackgroundTasks):

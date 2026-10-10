@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     BULK_DISCOUNT_PRICE_PER_KG: float = 110.0
     BULK_DISCOUNT_MIN_KG: float = 12.0
     DEFAULT_CITY: str = "Surat"
+    DEFAULT_STATE: str = "Gujarat"
+    TIMEZONE: str = "Asia/Kolkata"
 
     class Config:
         env_file = ".env"
