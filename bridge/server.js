@@ -81,6 +81,17 @@ async function startWhatsApp() {
         }
     });
 
+    // Helper to unwrap nested WhatsApp message wrappers (Disappearing/Ephemeral, View Once, etc.)
+    function getActualMessage(rawMsg) {
+        if (!rawMsg) return {};
+        let m = rawMsg;
+        if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message;
+        if (m.viewOnceMessage?.message) m = m.viewOnceMessage.message;
+        if (m.viewOnceMessageV2?.message) m = m.viewOnceMessageV2.message;
+        if (m.documentWithCaptionMessage?.message) m = m.documentWithCaptionMessage.message;
+        return m || {};
+    }
+
     // Handle incoming messages and forward to FastAPI
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
@@ -89,13 +100,15 @@ async function startWhatsApp() {
             if (!msg.message || msg.key.fromMe) continue;
 
             const remoteJid = msg.key.remoteJid;
-            let text = msg.message.conversation ||
-                         msg.message.extendedTextMessage?.text ||
-                         '';
+            const actualMessage = getActualMessage(msg.message);
+
+            let text = actualMessage.conversation ||
+                       actualMessage.extendedTextMessage?.text ||
+                       '';
             let audioPayload = null;
 
             // Handle WhatsApp Audio / Push-To-Talk Voice Notes
-            const audioMsg = msg.message.audioMessage;
+            const audioMsg = actualMessage.audioMessage;
             if (audioMsg) {
                 try {
                     const audioBuffer = await downloadMediaMessage(msg, 'buffer', {});
