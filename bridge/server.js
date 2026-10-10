@@ -213,6 +213,57 @@ app.post(['/message/sendText/:instance', '/message/sendText'], async (req, res) 
     }
 });
 
+// One-Click Dynamic UPI Payment Flow (Zero Payment Gateway Fees)
+app.post(['/message/sendUPIInvoice/:instance', '/message/sendUPIInvoice'], async (req, res) => {
+    try {
+        const body = req.body;
+        const rawNumber = body.number || '';
+        const orderCode = body.orderCode || 'ORD';
+        const amount = Number(body.amount || 0).toFixed(2);
+        const restaurantName = body.restaurantName || 'Valued Kitchen';
+        const upiId = body.upiId || process.env.MERCHANT_UPI_ID || 'vedicallio@icici';
+        const merchantName = body.merchantName || 'VedicAllio Agro';
+
+        if (!sock || connectionStatus !== 'connected') {
+            return res.status(503).json({ error: 'WhatsApp is not connected yet' });
+        }
+
+        const jid = rawNumber.includes('@') ? rawNumber : `${rawNumber.replace(/\D/g, '')}@s.whatsapp.net`;
+        const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${amount}&cu=INR&tn=Peeled%20Garlic%20${orderCode}&tr=${orderCode}`;
+
+        const qrBuffer = await QRCode.toBuffer(upiUri, {
+            errorCorrectionLevel: 'M',
+            margin: 2,
+            width: 400
+        });
+
+        const captionText = 
+`🧾 *VEDICALLIO AGRO - INVOICE*
+─────────────────────────
+📦 *Order:* \`${orderCode}\`
+🏢 *Restaurant:* ${restaurantName}
+💰 *Total Amount:* ₹${amount}
+─────────────────────────
+📲 *1-Tap Click to Pay (PhonePe / GPay / Paytm):*
+${upiUri}
+
+📷 *Or Scan the QR Code Above*
+*Rokle UPI ensures guaranteed 05:00-08:00 AM morning slot dispatch!*`;
+
+        await sock.sendMessage(jid, {
+            image: qrBuffer,
+            caption: captionText,
+            mimetype: 'image/png'
+        });
+
+        console.log(`🧾 UPI invoice QR dispatched to ${jid} for ₹${amount}`);
+        return res.json({ status: 'SUCCESS', upiUri, orderCode });
+    } catch (e) {
+        console.error('UPI Invoice Send error:', e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
 // Evolution API compatible presence endpoint
 app.post(['/chat/sendPresence/:instance', '/chat/sendPresence'], async (req, res) => {
     try {

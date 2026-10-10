@@ -2,6 +2,7 @@ import uuid
 import asyncio
 import base64
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
+from pydantic import BaseModel
 from loguru import logger
 try:
     import psycopg2
@@ -20,6 +21,8 @@ from app.agent.orchestrator import generate_sales_response
 from app.agent.transcriber import transcribe_voice_note
 from app.orders.extractor import extract_order_from_text
 from app.alerts.group_notifier import dispatch_operations_group_alert
+from app.cron.replenish import evaluate_reorder_triggers
+from app.logistics.clustering import generate_morning_dispatch_manifests, format_driver_manifest_whatsapp_text
 
 app = FastAPI(
     title="AllioBot WhatsApp Sales Agent",
@@ -336,3 +339,106 @@ async def trigger_safe_outbound_batch(background_tasks: BackgroundTasks):
 
     background_tasks.add_task(outbound_worker)
     return {"status": "outbound_worker_launched", "batch_limit": settings.MAX_OUTBOUND_PER_DAY}
+
+# -------------------------------------------------------------
+# Scale-Up Pillar 1: Daily Retention & Replenishment Cron Trigger
+# -------------------------------------------------------------
+@app.post("/cron/replenish")
+async def trigger_replenish_evaluator(background_tasks: BackgroundTasks):
+    """
+    Evaluates 48-hour order depletion cycles across Surat kitchens and
+    dispatches 1-tap re-order prompts via WhatsApp.
+    """
+    background_tasks.add_task(evaluate_reorder_triggers)
+    return {"status": "replenishment_evaluator_launched"}
+
+# -------------------------------------------------------------
+# Scale-Up Pillar 2: Surat Morning Route Geo-Clustering & Manifests
+# -------------------------------------------------------------
+@app.get("/logistics/manifests")
+def get_morning_manifests():
+    """
+    Groups today's morning prep orders into Surat geographical zones:
+    Zone 1 (South: Vesu/Piplod), Zone 2 (West: Adajan/Pal), Zone 3 (East: Varachha), Zone 4 (Core)
+    and formats WhatsApp manifests for delivery boys.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT o.id, o.order_code, o.quantity_kg, o.total_amount, o.payment_status,
+                   o.delivery_address, o.surat_suburb, l.business_name, l.phone_e164
+            FROM orders o
+            JOIN leads l ON o.lead_id = l.id
+            WHERE o.order_status = 'PENDING_DISPATCH'
+            ORDER BY o.created_at DESC;
+        """)
+        orders = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        order_dicts = [dict(o) if not isinstance(o, dict) else o for o in orders]
+        clustered = generate_morning_dispatch_manifests(order_dicts)
+
+        formatted_manifests = {}
+        today_str = datetime.now().strftime("%d-%b-%Y")
+        for zone, ord_list in clustered.items():
+            formatted_manifests[zone] = format_driver_manifest_whatsapp_text(zone, ord_list, today_str)
+
+        return {
+            "total_pending_orders": len(orders),
+            "zones_count": len(clustered),
+            "manifests_text": formatted_manifests
+        }
+    except Exception as e:
+        logger.error(f"Error generating manifests: {e}")
+        return {"error": str(e)}
+
+# -------------------------------------------------------------
+# Scale-Up Pillar 3: Cold Chain Telemetry & Spoilage Alerting
+# -------------------------------------------------------------
+class ColdChainTelemetry(BaseModel):
+    unit_id: str = "SURAT_COLD_DEPOT_01"
+    temperature_celsius: float
+    humidity_percentage: float = 65.0
+    door_open: bool = False
+    auth_token: str
+
+@app.post("/telemetry/cold-chain")
+async def ingest_cold_chain_telemetry(data: ColdChainTelemetry):
+    """
+    Receives IoT temperature telemetry from the Surat cold storage facility (Sahara Darwaja).
+    Safe threshold for peeled garlic: 0.5°C to 3.8°C.
+    If temp exceeds 4.5°C, immediately alerts the internal operations WhatsApp group!
+    """
+    temp = data.temperature_celsius
+    if temp > 4.5:
+        alert_msg = (
+            f"🚨 *CRITICAL COLD ROOM ALERT - SURAT DEPOT!* 🚨\n"
+            f"─────────────────────────\n"
+            f"🌡️ *Temperature:* *{temp:.1f}°C* (SAFE LIMIT: 4.0°C!)\n"
+            f"💧 *Humidity:* {data.humidity_percentage:.1f}%\n"
+            f"🚪 *Door:* {'OPEN ⚠️' if data.door_open else 'Closed'}\n"
+            f"⏰ *Recorded:* {datetime.now().strftime('%H:%M:%S IST')}\n"
+            f"─────────────────────────\n"
+            f"👉 *Action:* Check chiller circuit breaker immediately to prevent garlic browning and spoilage!"
+        )
+        logger.critical(f"Cold Chain Breach: {temp}°C! Alerting operations team...")
+        # Evolution API group message
+        url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
+        headers = {"apikey": settings.EVOLUTION_API_KEY, "Content-Type": "application/json"}
+        payload = {
+            "number": settings.OPERATIONS_GROUP_JID,
+            "textMessage": {"text": alert_msg}
+        }
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                await session.post(url, json=payload, headers=headers, timeout=5)
+        except Exception as e:
+            logger.error(f"Failed to blast cold chain alert: {e}")
+
+        return {"status": "CRITICAL_ALERT_FIRED", "temperature": temp}
+
+    return {"status": "OPTIMAL", "temperature": temp}
+
