@@ -3,8 +3,12 @@ import asyncio
 import base64
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from loguru import logger
-import psycopg2
-from psycopg2.extras import RealDictCursor
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    psycopg2 = None
+    RealDictCursor = None
 import redis
 
 from app.config import settings

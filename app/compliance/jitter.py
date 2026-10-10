@@ -1,11 +1,17 @@
 import random
 import math
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo
+    IST = ZoneInfo("Asia/Kolkata")
+except Exception:
+    try:
+        import pytz
+        IST = pytz.timezone(getattr(settings, "TIMEZONE", "Asia/Kolkata"))
+    except Exception:
+        IST = timezone(timedelta(hours=5, minutes=30))
 from app.config import settings
 from loguru import logger
-
-IST = pytz.timezone(settings.TIMEZONE)
 
 def is_within_circadian_window() -> bool:
     """
