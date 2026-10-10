@@ -6,6 +6,8 @@ from loguru import logger
 from app.config import settings
 from app.orders.models import ParsedOrder, OrderType, DeliverySlot
 
+from app.agent.cloud_ai_pool import cloud_ai_pool
+
 SURAT_SUBURBS = [
     "Piplod", "Vesu", "Adajan", "Pal", "Rander", "Varachha", "Katargam",
     "City Light", "Dumas", "Althan", "Bhatar", "Nanpura", "Majura", "Sarthana"
@@ -19,12 +21,12 @@ def detect_surat_suburb(text: str) -> str:
 
 async def extract_order_from_text(conversation_history_text: str) -> Optional[ParsedOrder]:
     """
-    Invokes Ollama with a strict JSON instruction to extract structured order entities.
-    Falls back to regex extraction if JSON fails.
+    Invokes Free Cloud AI Pool with strict JSON instruction to extract structured order entities.
+    Falls back to local Ollama or regex heuristics if cloud fails.
     """
-    prompt = f"""
-Extract order information from this conversation transcript. Output ONLY valid JSON with keys:
-- "is_order": boolean (true if customer confirmed an order or asked for sample)
+    extraction_prompt = f"""
+You are an entity extractor. Extract order information from this conversation transcript. Output ONLY valid JSON with keys:
+- "is_order": boolean (true if customer confirmed an order or asked for a sample)
 - "restaurant_name": string
 - "quantity_kg": number (0.5 if sample requested, otherwise positive number)
 - "is_sample": boolean
@@ -35,23 +37,52 @@ Extract order information from this conversation transcript. Output ONLY valid J
 Transcript:
 \"\"\"{conversation_history_text}\"\"\"
 """
-    payload = {
-        "model": settings.OLLAMA_MODEL,
-        "prompt": prompt,
-        "format": "json",
-        "stream": False,
-        "options": {"temperature": 0.1}
-    }
-    ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
+    messages = [
+        {"role": "system", "content": "You are a JSON-only entity extractor. Respond strictly with JSON."},
+        {"role": "user", "content": extraction_prompt}
+    ]
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(ollama_url, json=payload, timeout=20) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    raw_json = json.loads(data.get("response", "{}"))
-                    if not raw_json.get("is_order", False):
-                        return None
+    # Try Cloud AI Pool first
+    cloud_json_str = await cloud_ai_pool.chat_completion(
+        messages=messages,
+        temperature=0.1,
+        max_tokens=300,
+        response_format={"type": "json_object"}
+    )
+
+    raw_json = None
+    if cloud_json_str:
+        try:
+            # Handle potential markdown fence wrap
+            clean_str = cloud_json_str.strip()
+            if clean_str.startswith("```"):
+                clean_str = clean_str.split("```")[1]
+                if clean_str.startswith("json"):
+                    clean_str = clean_str[4:]
+            raw_json = json.loads(clean_str.strip())
+        except Exception as e:
+            logger.debug(f"Cloud AI JSON parsing error: {e}")
+
+    # Fallback to Ollama if cloud did not yield valid JSON
+    if not raw_json:
+        payload = {
+            "model": settings.OLLAMA_MODEL,
+            "prompt": extraction_prompt,
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0.1}
+        }
+        ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(ollama_url, json=payload, timeout=15) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        raw_json = json.loads(data.get("response", "{}"))
+        except Exception:
+            pass
+
+    if raw_json and raw_json.get("is_order", False):
 
                     is_sample = raw_json.get("is_sample", False)
                     qty = float(raw_json.get("quantity_kg", 0.5 if is_sample else 5.0))

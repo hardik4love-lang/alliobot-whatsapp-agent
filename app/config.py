@@ -26,7 +26,13 @@ class Settings(BaseSettings):
     MAX_OUTBOUND_INTERVAL_SECONDS: int = 420
     CIRCUIT_BREAKER_BLOCK_THRESHOLD: float = 0.02
 
-    # LLM Settings
+    # Free Cloud AI Pool Keys (Zero-Cost Inference)
+    GITHUB_TOKEN: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
+
+    # Optional Local LLM Fallback (Ollama)
     OLLAMA_HOST: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:7b-instruct-q4_K_M"
 

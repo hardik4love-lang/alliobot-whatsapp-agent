@@ -5,14 +5,15 @@ from loguru import logger
 from app.config import settings
 from app.agent.prompts import SYSTEM_SALES_PROMPT
 from app.agent.objection_engine import check_opt_out
+from app.agent.cloud_ai_pool import cloud_ai_pool
 
 async def generate_sales_response(
     messages_history: List[Dict[str, str]],
     user_latest_message: str
 ) -> str:
     """
-    Sends conversation history + latest message to self-hosted Ollama (Qwen-2.5-7B)
-    and returns conversational reply.
+    Sends conversation history + latest message to the Free Cloud AI Pool (Groq / GitHub Models / OpenRouter).
+    Falls back to local Ollama or deterministic script only if all cloud providers fail.
     """
     if check_opt_out(user_latest_message):
         return "Samji gaya bhai. Tamare number par thi aagad message nahi aave. Aabhar."
@@ -23,6 +24,17 @@ async def generate_sales_response(
 
     formatted_messages.append({"role": "user", "content": user_latest_message})
 
+    # Step 1: Query Free Cloud AI Pool (Zero local download, blazing fast)
+    cloud_reply = await cloud_ai_pool.chat_completion(
+        messages=formatted_messages,
+        temperature=0.35,
+        max_tokens=180
+    )
+    if cloud_reply:
+        return cloud_reply
+
+    # Step 2: Fallback to local Ollama if configured
+    logger.info("Attempting local Ollama fallback...")
     payload = {
         "model": settings.OLLAMA_MODEL,
         "messages": formatted_messages,
@@ -37,16 +49,14 @@ async def generate_sales_response(
     ollama_url = f"{settings.OLLAMA_HOST}/api/chat"
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(ollama_url, json=payload, timeout=25) as resp:
+            async with session.post(ollama_url, json=payload, timeout=15) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     bot_text = data.get("message", {}).get("content", "").strip()
                     return bot_text
-                else:
-                    err_text = await resp.text()
-                    logger.error(f"Ollama API error ({resp.status}): {err_text}")
-                    return "Bhai, ame 100% dry peeled lahsan ₹120/kg ma deliver kariye chhiye. Tamare kale morning mate ek 500g trial sample joyiye che?"
     except Exception as e:
-        logger.error(f"Failed to reach Ollama inference engine: {e}")
-        # Deterministic offline fallback
-        return "Namaste! VedicAllio peeled garlic ₹120/kg ma available che. Kale morning prep mate 500g free sample mocklavu? Tamari restaurant nu address share karsho."
+        logger.debug(f"Local Ollama unreachable or skipped: {e}")
+
+    # Step 3: Deterministic high-converting script fallback
+    return "Namaste! VedicAllio peeled garlic ₹120/kg ma available che. Kale morning prep mate 500g free sample mocklavu? Tamari restaurant nu address share karsho."
+

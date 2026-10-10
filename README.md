@@ -104,17 +104,21 @@ Edit `.env` and fill in:
 ```bash
 docker compose up -d
 ```
-This boots 5 containerized services:
+This boots the core microservices in under 5 seconds (with **zero heavy model downloads**):
 1. `alliobot_postgres`: PostgreSQL 16 with pre-initialized schemas
 2. `alliobot_redis`: Redis 7.2 queue and cache
 3. `alliobot_evolution_api`: WhatsApp Web WebSocket gateway
-4. `alliobot_ollama`: Local LLM inference engine
-5. `alliobot_app`: FastAPI webhook & sales engine
+4. `alliobot_app`: FastAPI webhook, sales engine, and Cloud AI Pool connector
 
-### 4. Pull the Local Multilingual LLM (Qwen-2.5-7B)
-```bash
-docker exec -it alliobot_ollama ollama pull qwen2.5:7b-instruct-q4_K_M
-```
+*(Note: Local Ollama is 100% optional! By default, AllioBot routes through the high-speed Free Cloud AI Pool.)*
+
+### 4. Connect Free Cloud AI Pool (No Downloads Required!)
+AllioBot includes an automated multi-provider failover pool:
+- **GitHub Models:** Uses your existing GitHub personal token (`gh auth token`) to access Llama 3.1 70B for free!
+- **Groq Cloud (Optional):** Free ultra-fast Llama 3.3 70B (get key at [console.groq.com](https://console.groq.com/keys)).
+- **OpenRouter Free (Optional):** Free models like Qwen 2.5 72B (get key at [openrouter.ai](https://openrouter.ai/keys)).
+
+Simply add your key(s) to `.env`. If one provider ever experiences downtime, AllioBot automatically fails over to the next provider in the pool.
 
 ### 5. Pair Your WhatsApp Number
 1. Open your browser and navigate to Evolution API manager: `http://localhost:8080/manager`

@@ -57,6 +57,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    profiles: ["local-llm"]
     container_name: alliobot_ollama
     restart: always
     ports:
@@ -80,8 +81,6 @@ services:
       redis:
         condition: service_healthy
       evolution_api:
-        condition: service_started
-      ollama:
         condition: service_started
 
 volumes:
