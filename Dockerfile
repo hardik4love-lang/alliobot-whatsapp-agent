@@ -22,12 +22,8 @@ RUN cd bridge && npm install --allow-git=all
 COPY . .
 
 # Create startup script for dual processes (FastAPI + Node WhatsApp Gateway)
-RUN echo '#!/bin/sh\n\
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &\n\
-cd bridge && node server.js\n\
-' > /app/start.sh && chmod +x /app/start.sh
+RUN printf '#!/bin/sh\npython -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &\ncd bridge && node server.js\n' > /app/start.sh && chmod +x /app/start.sh
 
-# Expose default cloud port (Render / Cloud uses PORT environment variable or 8080)
-EXPOSE 8080
+EXPOSE 10000
 
 CMD ["/app/start.sh"]

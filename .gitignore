@@ -39,6 +39,12 @@ ollamadata/
 logs/
 *.log
 
+# Node.js
+node_modules/
+bridge/node_modules/
+auth_session/
+bridge/auth_session/
+
 # IDE & OS
 .vscode/
 .idea/

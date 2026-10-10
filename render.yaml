@@ -1,14 +1,16 @@
 services:
   - type: web
     name: alliobot-whatsapp-agent
-    env: docker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
     region: singapore
     branch: main
     autoDeploy: true
     envVars:
       - key: PORT
-        value: 8080
+        value: 10000
       - key: GITHUB_TOKEN
         sync: false
       - key: USER_PHONE_NUMBER
