@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 from pydantic import Field
 from typing import Optional
@@ -11,8 +12,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/alliobot_db"
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # Evolution API
-    EVOLUTION_API_URL: str = "http://localhost:8080"
+    # Evolution API / Node Bridge Gateway
+    EVOLUTION_API_URL: str = f"http://localhost:{os.getenv('PORT', '10000')}"
     EVOLUTION_API_KEY: str = "alliobot_secret_foss_api_key_2026"
     EVOLUTION_INSTANCE_NAME: str = "alliobot_primary_instance"
 

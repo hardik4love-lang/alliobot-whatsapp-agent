@@ -207,9 +207,39 @@ app.get(['/group/fetchAllGroups/:instance', '/group/fetchAllGroups'], async (req
             subject: g.subject
         }));
         return res.json(result);
-    } catch (e) {
-        return res.json([]);
-    }
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        whatsapp_status: connectionStatus,
+        connected_phone: connectedPhone,
+        uptime_seconds: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Proxy route for triggering scraping via public URL
+app.post('/leads/scrape', (req, res) => {
+    const proxyReq = http.request('http://localhost:8000/leads/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    }, (proxyRes) => {
+        proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => res.status(502).json({ error: 'FastAPI unreachable: ' + err.message }));
+    req.pipe(proxyReq);
+});
+
+// Proxy route for triggering safe outbound batch
+app.post('/leads/dispatch-outbound', (req, res) => {
+    const proxyReq = http.request('http://localhost:8000/leads/dispatch-outbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    }, (proxyRes) => {
+        proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => res.status(502).json({ error: 'FastAPI unreachable: ' + err.message }));
+    req.pipe(proxyReq);
 });
 
 app.listen(PORT, '0.0.0.0', () => {
