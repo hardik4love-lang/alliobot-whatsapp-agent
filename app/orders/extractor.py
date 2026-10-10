@@ -107,12 +107,12 @@ Transcript:
     except Exception as e:
         logger.error(f"Error in LLM order extraction: {e}")
 
-    # Fallback heuristic: check for 'sample' keyword
+    # Fallback heuristic: check for 'sample' or 'trial' keyword
     if re.search(r'\b(sample|trial|demo)\b', conversation_history_text, re.IGNORECASE):
         return ParsedOrder(
             restaurant_name="Inquiry Lead",
-            quantity_kg=0.5,
-            unit_price=0.0,
+            quantity_kg=1.0,
+            unit_price=settings.DEFAULT_PRICE_PER_KG,
             delivery_address="Address Pending via Chat",
             surat_suburb=detect_surat_suburb(conversation_history_text),
             order_type=OrderType.SAMPLE_500G
