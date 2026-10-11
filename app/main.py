@@ -135,12 +135,13 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(
         process_incoming_conversation,
         customer_phone=customer_phone,
-        incoming_text=message_text
+        incoming_text=message_text,
+        sender_jid=sender_jid
     )
 
     return {"status": "accepted"}
 
-async def process_incoming_conversation(customer_phone: str, incoming_text: str):
+async def process_incoming_conversation(customer_phone: str, incoming_text: str, sender_jid: str = ""):
     """
     Asynchronously processes the conversation:
     1. Looks up or creates lead and conversation in PostgreSQL
@@ -214,8 +215,9 @@ async def process_incoming_conversation(customer_phone: str, incoming_text: str)
         # Generate LLM response
         bot_reply = await generate_sales_response(history, incoming_text)
 
-        # Send via Evolution API with human presence mimicry
-        await simulate_human_presence_and_send(customer_phone, bot_reply)
+        # Send via Evolution API with human presence mimicry (preserves exact JID including @lid)
+        target_recipient = sender_jid if sender_jid else customer_phone
+        await simulate_human_presence_and_send(target_recipient, bot_reply)
 
         # Record outbound response
         cur.execute(
