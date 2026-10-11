@@ -92,7 +92,8 @@ async function usePostgresAuthState(connectionString, tableName = 'baileys_auth_
                 }
             }
         },
-        saveCreds: () => writeData('creds', creds)
+        saveCreds: () => writeData('creds', creds),
+        pool
     };
 }
 

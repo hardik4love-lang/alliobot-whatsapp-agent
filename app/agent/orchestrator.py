@@ -57,6 +57,6 @@ async def generate_sales_response(
     except Exception as e:
         logger.debug(f"Local Ollama unreachable or skipped: {e}")
 
-    # Step 3: Deterministic high-converting script fallback
-    return "Namaste! VedicAllio peeled garlic ₹120/kg ma available che. Kale morning prep mate 500g free sample mocklavu? Tamari restaurant nu address share karsho."
+    # Step 3: Deterministic high-converting script fallback (Fresh peeled garlic, paid trial pack)
+    return "Namaste! VedicAllio taaju folelu lasan (100% fresh raw peeled garlic) ₹120/kg ma available che. Kal savaare kitchen test mate 1-2 kg trial pack mocklavu? Tamari restaurant nu address share karsho."
 

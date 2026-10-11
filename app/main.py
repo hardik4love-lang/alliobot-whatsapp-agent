@@ -80,7 +80,9 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     if "@g.us" in sender_jid:
         return {"status": "ignored_group"}
 
-    customer_phone = "+" + sender_jid.split("@")[0]
+    raw_jid_user = sender_jid.split("@")[0].split(":")[0]
+    clean_digits = "".join(c for c in raw_jid_user if c.isdigit())
+    customer_phone = f"+{clean_digits}"
     message_text = (
         message_data.get("message", {}).get("conversation")
         or message_data.get("message", {}).get("extendedTextMessage", {}).get("text")

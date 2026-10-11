@@ -12,6 +12,15 @@ try:
 except ImportError:
     HAS_PSYCOPG2 = False
 
+import re
+
+def clean_db_url(url: str) -> str:
+    if not url:
+        return url
+    cleaned = re.sub(r'([?&])channel_binding=[^&]*(&|$)', r'\1', url)
+    cleaned = re.sub(r'[?&]$', '', cleaned)
+    return cleaned
+
 class DBAdapter:
     """
     Dual-engine Database Adapter:
@@ -23,22 +32,23 @@ class DBAdapter:
         self._test_connection()
 
     def _test_connection(self):
-        if HAS_PSYCOPG2:
+        db_url = clean_db_url(settings.DATABASE_URL)
+        if HAS_PSYCOPG2 and db_url and not db_url.startswith("sqlite"):
             try:
-                conn = psycopg2.connect(settings.DATABASE_URL, connect_timeout=1)
+                conn = psycopg2.connect(db_url, connect_timeout=10)
                 conn.close()
                 self.is_postgres = True
                 logger.info("Connected to PostgreSQL database.")
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"PostgreSQL connection test failed: {e}. Falling back to SQLite.")
         self.is_postgres = False
         init_sqlite_db()
         logger.info(f"Using native Windows SQLite database: {SQLITE_DB_PATH}")
 
     def get_connection(self):
         if self.is_postgres:
-            return psycopg2.connect(settings.DATABASE_URL, cursor_factory=RealDictCursor)
+            return psycopg2.connect(clean_db_url(settings.DATABASE_URL), cursor_factory=RealDictCursor)
         else:
             conn = sqlite3.connect(SQLITE_DB_PATH, timeout=20.0)
             conn.row_factory = sqlite3.Row

@@ -24,6 +24,7 @@ let currentQR = null;
 let qrDataURL = null;
 let connectionStatus = 'initializing';
 let connectedPhone = null;
+let pgPool = null;
 
 async function startWhatsApp() {
     let authState;
@@ -32,6 +33,7 @@ async function startWhatsApp() {
         try {
             console.log('Connecting to PostgreSQL for WhatsApp session persistence...');
             authState = await usePostgresAuthState(dbUrl);
+            pgPool = authState.pool;
             console.log('✅ PostgreSQL WhatsApp Auth Store active! Session will survive container restarts.');
         } catch (dbErr) {
             console.warn('PostgreSQL auth failed, falling back to local file auth:', dbErr.message);
@@ -85,10 +87,17 @@ async function startWhatsApp() {
     function getActualMessage(rawMsg) {
         if (!rawMsg) return {};
         let m = rawMsg;
-        if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message;
-        if (m.viewOnceMessage?.message) m = m.viewOnceMessage.message;
-        if (m.viewOnceMessageV2?.message) m = m.viewOnceMessageV2.message;
-        if (m.documentWithCaptionMessage?.message) m = m.documentWithCaptionMessage.message;
+        while (
+            m?.ephemeralMessage?.message ||
+            m?.viewOnceMessage?.message ||
+            m?.viewOnceMessageV2?.message ||
+            m?.documentWithCaptionMessage?.message
+        ) {
+            m = m.ephemeralMessage?.message ||
+                m.viewOnceMessage?.message ||
+                m.viewOnceMessageV2?.message ||
+                m.documentWithCaptionMessage?.message;
+        }
         return m || {};
     }
 
@@ -104,6 +113,12 @@ async function startWhatsApp() {
 
             let text = actualMessage.conversation ||
                        actualMessage.extendedTextMessage?.text ||
+                       actualMessage.imageMessage?.caption ||
+                       actualMessage.videoMessage?.caption ||
+                       actualMessage.documentMessage?.caption ||
+                       actualMessage.buttonsResponseMessage?.selectedDisplayText ||
+                       actualMessage.templateButtonReplyMessage?.selectedDisplayText ||
+                       actualMessage.listResponseMessage?.title ||
                        '';
             let audioPayload = null;
 
@@ -315,6 +330,62 @@ app.get('/health', (req, res) => {
         status: 'healthy',
         whatsapp_status: connectionStatus,
         connected_phone: connectedPhone,
+        uptime_seconds: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Diagnostics & Live Telemetry Endpoint
+app.get('/diagnostic', async (req, res) => {
+    let neonDbConnected = false;
+    let authKeysCount = 0;
+    let leadsCount = 0;
+    let messagesCount = 0;
+    let lastError = null;
+
+    if (pgPool) {
+        try {
+            const countRes = await pgPool.query('SELECT count(*) FROM baileys_auth_store;');
+            authKeysCount = parseInt(countRes.rows[0].count, 10);
+            neonDbConnected = true;
+
+            const lRes = await pgPool.query('SELECT count(*) FROM leads;');
+            leadsCount = parseInt(lRes.rows[0].count, 10);
+
+            const mRes = await pgPool.query('SELECT count(*) FROM messages;');
+            messagesCount = parseInt(mRes.rows[0].count, 10);
+        } catch (e) {
+            lastError = e.message;
+        }
+    }
+
+    let fastApiStatus = 'checking...';
+    try {
+        const faReq = await new Promise((resolve) => {
+            const r = http.get('http://localhost:8000/health', (resp) => {
+                let data = '';
+                resp.on('data', chunk => data += chunk);
+                resp.on('end', () => {
+                    try { resolve(JSON.parse(data)); } catch (e) { resolve(data); }
+                });
+            });
+            r.on('error', (err) => resolve({ error: err.message }));
+            r.setTimeout(3000, () => { r.abort(); resolve({ error: 'timeout' }); });
+        });
+        fastApiStatus = faReq;
+    } catch (e) {
+        fastApiStatus = { error: e.message };
+    }
+
+    res.json({
+        gateway_status: connectionStatus,
+        connected_phone: connectedPhone,
+        neon_db_connected: neonDbConnected,
+        baileys_auth_keys: authKeysCount,
+        leads_in_db: leadsCount,
+        messages_in_db: messagesCount,
+        fastapi_health: fastApiStatus,
+        db_diagnostic_error: lastError,
         uptime_seconds: Math.floor(process.uptime()),
         timestamp: new Date().toISOString()
     });
