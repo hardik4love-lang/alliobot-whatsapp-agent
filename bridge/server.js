@@ -103,7 +103,7 @@ async function startWhatsApp() {
 
     // Handle incoming messages and forward to FastAPI
     sock.ev.on('messages.upsert', async (m) => {
-        if (m.type !== 'notify') return;
+        if (m.type !== 'notify' && m.type !== 'append') return;
 
         for (const msg of m.messages) {
             if (!msg.message || msg.key.fromMe) continue;
@@ -158,15 +158,15 @@ async function startWhatsApp() {
             };
 
             try {
-                const req = http.request(FASTAPI_WEBHOOK_URL, {
+                const fResp = await fetch(FASTAPI_WEBHOOK_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
                 });
-                req.on('error', (err) => console.log('FastAPI forwarding notice:', err.message));
-                req.write(JSON.stringify(payload));
-                req.end();
+                const fJson = await fResp.json().catch(() => ({}));
+                console.log(`📡 FastApi webhook response [${fResp.status}]:`, JSON.stringify(fJson));
             } catch (err) {
-                console.log('Error forwarding message to FastAPI:', err.message);
+                console.error('❌ Error forwarding message to FastAPI:', err.message);
             }
         }
     });
@@ -406,6 +406,18 @@ app.post('/leads/scrape', (req, res) => {
 // Proxy route for triggering safe outbound batch
 app.post('/leads/dispatch-outbound', (req, res) => {
     const proxyReq = http.request('http://localhost:8000/leads/dispatch-outbound', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    }, (proxyRes) => {
+        proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => res.status(502).json({ error: 'FastAPI unreachable: ' + err.message }));
+    req.pipe(proxyReq);
+});
+
+// Proxy route for webhook testing & external injection
+app.post('/webhook/whatsapp', (req, res) => {
+    const proxyReq = http.request('http://localhost:8000/webhook/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     }, (proxyRes) => {

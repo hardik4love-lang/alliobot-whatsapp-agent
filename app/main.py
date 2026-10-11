@@ -30,12 +30,35 @@ app = FastAPI(
     description="Zero-Cost WhatsApp Sales Agent for B2B Peeled Garlic in Surat"
 )
 
+# In-memory deduplication set fallback
+seen_msg_ids = set()
+
 # Redis connection for deduplication and rate-limiting
 try:
-    r_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    r_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1)
+    r_client.ping()
+    logger.info("Connected to Redis for deduplication.")
 except Exception as e:
-    logger.warning(f"Redis initialization warning: {e}")
+    logger.info(f"Redis unavailable ({e}), using robust in-memory deduplication.")
     r_client = None
+
+def is_msg_seen(msg_id: str) -> bool:
+    if not msg_id:
+        return False
+    if r_client:
+        try:
+            if r_client.get(f"seen_msg:{msg_id}"):
+                return True
+            r_client.setex(f"seen_msg:{msg_id}", 21600, "1")
+            return False
+        except Exception:
+            pass
+    if msg_id in seen_msg_ids:
+        return True
+    seen_msg_ids.add(msg_id)
+    if len(seen_msg_ids) > 2000:
+        seen_msg_ids.clear()
+    return False
 
 from app.db_adapter import db
 
@@ -103,11 +126,9 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
     if not message_text or not message_id:
         return {"status": "ignored_empty"}
 
-    # Idempotency check via Redis (6-hour window)
-    if r_client:
-        if r_client.get(f"seen_msg:{message_id}"):
-            return {"status": "already_processed"}
-        r_client.setex(f"seen_msg:{message_id}", 21600, "1")
+    # Idempotency check (Redis with in-memory fallback)
+    if is_msg_seen(message_id):
+        return {"status": "already_processed"}
 
     logger.info(f"Received message from {customer_phone}: '{message_text}'")
 
