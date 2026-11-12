@@ -21,10 +21,11 @@ class Settings(BaseSettings):
     USER_PHONE_NUMBER: str = "+919876543210"
     OPERATIONS_GROUP_JID: str = "120363028475918234@g.us"
 
-    # Anti-Ban Outbound Bounds (for single number safety)
-    MAX_OUTBOUND_PER_DAY: int = 25
-    MIN_OUTBOUND_INTERVAL_SECONDS: int = 180
-    MAX_OUTBOUND_INTERVAL_SECONDS: int = 420
+    # Anti-Ban Outbound Bounds (25/hr pacing, max safe ceiling: 150/day)
+    MAX_OUTBOUND_PER_HOUR: int = 25
+    MAX_OUTBOUND_PER_DAY: int = 150
+    MIN_OUTBOUND_INTERVAL_SECONDS: int = 120
+    MAX_OUTBOUND_INTERVAL_SECONDS: int = 168
     CIRCUIT_BREAKER_BLOCK_THRESHOLD: float = 0.02
 
     # Free Cloud AI Pool Keys (Zero-Cost Inference)
