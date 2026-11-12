@@ -220,6 +220,19 @@ app.get(['/', '/manager'], (req, res) => {
     `);
 });
 
+// Reconnection endpoint to recover Baileys socket if disconnected
+app.post(['/reconnect', '/restart-whatsapp'], async (req, res) => {
+    try {
+        console.log('🔄 Manual WhatsApp reconnection requested...');
+        connectionStatus = 'reconnecting';
+        await startWhatsApp();
+        return res.json({ status: 'RECONNECT_TRIGGERED', connectionStatus });
+    } catch (e) {
+        console.error('Reconnect error:', e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
 // Evolution API compatible send endpoint
 app.post(['/message/sendText/:instance', '/message/sendText'], async (req, res) => {
     try {
