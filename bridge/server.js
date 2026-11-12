@@ -66,13 +66,20 @@ async function startWhatsApp() {
         }
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`Connection closed due to ${lastDisconnect?.error}, reconnecting: ${shouldReconnect}`);
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+            const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+            console.log(`Connection closed due to ${lastDisconnect?.error}, isLoggedOut: ${isLoggedOut}`);
             connectionStatus = 'disconnected';
             currentQR = null;
             qrDataURL = null;
-            if (shouldReconnect) {
-                startWhatsApp();
+            if (isLoggedOut) {
+                console.log('Session logged out by WhatsApp! Purging auth store to generate fresh QR...');
+                if (pgPool) {
+                    pgPool.query('DELETE FROM baileys_auth_store;').catch(err => console.error('Clear error:', err.message));
+                }
+                setTimeout(() => startWhatsApp(), 2000);
+            } else {
+                setTimeout(() => startWhatsApp(), 3000);
             }
         } else if (connection === 'open') {
             console.log('🎉 WhatsApp Connected Successfully!');
@@ -212,6 +219,7 @@ app.get(['/', '/manager'], (req, res) => {
                 <div class="status-badge badge-waiting">● Generating Session...</div>
                 <div style="font-size: 36px; margin: 30px 0;">⏳</div>
                 <p>Initializing WhatsApp crypto session. Please wait 5 seconds...</p>
+                <p><a href="/reset-session" style="color: #ffd279; text-decoration: underline; font-size: 13px;">Click here to Force Refresh / Get New QR</a></p>
             `}
             <div class="footer">Zero-Docker Native Windows Architecture</div>
         </div>
@@ -221,6 +229,22 @@ app.get(['/', '/manager'], (req, res) => {
 });
 
 // Reconnection endpoint to recover Baileys socket if disconnected
+app.all(['/reset-session', '/force-qr'], async (req, res) => {
+    try {
+        console.log('Force resetting WhatsApp session and generating fresh QR...');
+        if (pgPool) {
+            await pgPool.query('DELETE FROM baileys_auth_store;');
+        }
+        currentQR = null;
+        qrDataURL = null;
+        connectionStatus = 'generating_qr';
+        startWhatsApp();
+        return res.redirect('/');
+    } catch (e) {
+        return res.status(500).send(`Error: ${e.message}`);
+    }
+});
+
 app.post(['/reconnect', '/restart-whatsapp'], async (req, res) => {
     try {
         console.log('🔄 Manual WhatsApp reconnection requested...');
