@@ -3,18 +3,19 @@ import re
 
 SPINTAX_OUTBOUND_TEMPLATES = [
     (
-        "{Kem cho|Namaste|Pranam} {Bhai|Chef|Owner|Ji}, "
-        "{Tamari kitchen ma|Tamare restaurant ma|Kitchen prep mate} garlic no daily use che? "
-        "Ame Surat ma 100% {sukhu ane saaf|dry pneumatic peeled|ready-to-use} lahsan "
-        "{pure ₹120/kg ma|wholesale ₹120 rate ma|fakt ₹120 rate ma} direct deliver kariye chhiye. "
-        "{Kale morning mate ek 500g trial sample mocklavu?|Aje ek sample try karsho?|Quality check mate ek free sample joyiye?}"
+        "{Namaste|Kem cho|Pranam} {Bhai|Chef|Owner Ji}, "
+        "{VedicAllio Surat taraf thi Kishan bolu chhu|Surat garlic supply taraf thi navi service sharu thay che}. "
+        "21st thi amari navi doorstep delivery scheme sharu thay che — {tamara restaurant na|tamara kitchen na} doorstep par "
+        "clean, sorted natural whole garlic bulbs (10kg/20kg કટ્ટા) direct deliver thase. "
+        "Distance mujab fakt ₹20 thi ₹50 delivery charge che, APMC javani jarur nathi. "
+        "{21st mate tamaro slot pre-book karvo che?|Navi scheme ma tamari kitchen mate booking kari daie?}"
     ),
     (
-        "{Namaste|Hello|Kem cho} {Ji|Bhai|Chef}, "
-        "{VedicAllio Surat thi contact karu chhu|Surat fresh peeled garlic supply taraf thi}. "
-        "{Tamara restaurant ma|Tamari kitchen ma} market karta saari quality nu "
-        "dry peeled lahsan ₹120/kg ma provide kariye chhiye (zero water, no slime). "
-        "{Tamara chef mate ek trial sample drop kariye kale?|Sample pack try karvu che kal sakale?}"
+        "{Kem cho|Namaste|Hello} {Chef Ji|Bhai|Sir}, "
+        "{Tamara kitchen ma|Tamari restaurant ma} daily whole garlic no regular use che? "
+        "21st thi ame direct doorstep whole garlic supply start kariye chhiye. "
+        "Clean, sorted natural bulbs direct mandi wholesale rate par, ane fakt ₹20 to ₹50 nominal delivery charge ma tamara kitchen par delivery. "
+        "{21st na morning slot mate tamaro 10kg/20kg order pre-book kariye?|Tamari restaurant nu name ane address share karsho?}"
     )
 ]
 
